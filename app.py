@@ -78,12 +78,11 @@ def index():
 @app.route('/login', methods=('GET', 'POST'))
 def login():
     if request.method == 'POST':
-        role = request.form['role']
         username = request.form['username']
         password = request.form['password']
         conn = get_db_connection()
-        user = conn.execute('SELECT * FROM users WHERE username = ? AND password = ? AND role = ?',
-                            (username, password, role)).fetchone()
+        user = conn.execute('SELECT * FROM users WHERE username = ? AND password = ?', 
+                            (username, password)).fetchone()
         conn.close()
         if user:
             session['user_id'] = user['id']
