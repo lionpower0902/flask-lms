@@ -4,11 +4,59 @@ import sqlite3
 import os
 from datetime import datetime
 
+def init_db():
+    conn = sqlite3.connect('database.db')
+    c = conn.cursor()
+
+    # users テーブル作成
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL,
+        password TEXT NOT NULL,
+        role TEXT NOT NULL
+    )
+    ''')
+
+    # courses テーブル作成
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS courses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        filename TEXT NOT NULL,
+        uploaded_at TEXT
+    )
+    ''')
+
+    # logs テーブル作成
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        filename TEXT,
+        watched_at TEXT
+    )
+    ''')
+
+    # 初期ユーザーが存在しなければ追加
+    user_check = c.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    if user_check == 0:
+        c.execute("INSERT INTO users (username, password, role) VALUES ('admin', 'admin', 'admin')")
+        c.execute("INSERT INTO users (username, password, role) VALUES ('teacher1', 'pass', 'teacher')")
+        c.execute("INSERT INTO users (username, password, role) VALUES ('student1', 'pass', 'student')")
+
+    conn.commit()
+    conn.close()
+
+
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'
 UPLOAD_FOLDER = 'static/uploads'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 ALLOWED_EXTENSIONS = {'mp4', 'pdf'}
+
+init_db()  # アプリ起動時に1度だけ実行
+
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
