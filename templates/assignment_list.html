@@ -1,0 +1,16 @@
+<!doctype html>
+<title>Assignments</title>
+<h1>Assignment List</h1>
+<a href="/logout">Logout</a><br>
+{% if session['role'] == 'teacher' %}
+  <a href="/assignments/upload">Upload New Assignment</a><br>
+{% endif %}
+<ul>
+  {% for a in assignments %}
+    <li>
+      <strong>{{ a['title'] }}</strong> - Due: {{ a['due_date'] }}<br>
+      {{ a['description'] }}<br>
+      <a href="/assignments/submit/{{ a['id'] }}">Submit</a>
+    </li>
+  {% endfor %}
+</ul>
