@@ -4,59 +4,16 @@ import sqlite3
 import os
 from datetime import datetime
 
-def init_db():
-    conn = sqlite3.connect('database.db')
-    c = conn.cursor()
-
-    # users テーブル作成
-    c.execute('''
-    CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT NOT NULL,
-        password TEXT NOT NULL,
-        role TEXT NOT NULL
-    )
-    ''')
-
-    # courses テーブル作成
-    c.execute('''
-    CREATE TABLE IF NOT EXISTS courses (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        title TEXT NOT NULL,
-        filename TEXT NOT NULL,
-        uploaded_at TEXT
-    )
-    ''')
-
-    # logs テーブル作成
-    c.execute('''
-    CREATE TABLE IF NOT EXISTS logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
-        filename TEXT,
-        watched_at TEXT
-    )
-    ''')
-
-    # 初期ユーザーが存在しなければ追加
-    user_check = c.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-    if user_check == 0:
-        c.execute("INSERT INTO users (username, password, role) VALUES ('admin', 'admin', 'admin')")
-        c.execute("INSERT INTO users (username, password, role) VALUES ('teacher1', 'pass', 'teacher')")
-        c.execute("INSERT INTO users (username, password, role) VALUES ('student1', 'pass', 'student')")
-
-    conn.commit()
-    conn.close()
-
-
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'
+
 UPLOAD_FOLDER = 'static/uploads'
+ASSIGNMENT_FOLDER = 'static/assignments'
+SUBMISSION_FOLDER = 'static/submissions'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-ALLOWED_EXTENSIONS = {'mp4', 'pdf'}
-
-init_db()  # アプリ起動時に1度だけ実行
-
+app.config['ASSIGNMENT_FOLDER'] = ASSIGNMENT_FOLDER
+app.config['SUBMISSION_FOLDER'] = SUBMISSION_FOLDER
+ALLOWED_EXTENSIONS = {'pdf', 'docx', 'txt', 'zip'}
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -66,14 +23,74 @@ def get_db_connection():
     conn.row_factory = sqlite3.Row
     return conn
 
+def init_db():
+    conn = sqlite3.connect('database.db')
+    c = conn.cursor()
+
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL,
+        password TEXT NOT NULL,
+        role TEXT NOT NULL
+    )
+    ''')
+
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS courses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        filename TEXT NOT NULL,
+        uploaded_at TEXT
+    )
+    ''')
+
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        filename TEXT,
+        watched_at TEXT
+    )
+    ''')
+
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS assignments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT,
+        description TEXT,
+        due_date TEXT,
+        file_name TEXT,
+        uploaded_by INTEGER
+    )
+    ''')
+
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS submissions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        assignment_id INTEGER,
+        student_id INTEGER,
+        file_name TEXT,
+        submitted_at TEXT
+    )
+    ''')
+
+    user_check = c.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    if user_check == 0:
+        c.execute("INSERT INTO users (username, password, role) VALUES ('admin', 'admin', 'admin')")
+        c.execute("INSERT INTO users (username, password, role) VALUES ('teacher1', 'pass', 'teacher')")
+        c.execute("INSERT INTO users (username, password, role) VALUES ('student1', 'pass', 'student')")
+
+    conn.commit()
+    conn.close()
+
+init_db()
+
 @app.route('/')
 def index():
     if 'user_id' not in session:
         return redirect(url_for('login'))
-    conn = get_db_connection()
-    courses = conn.execute('SELECT * FROM courses').fetchall()
-    conn.close()
-    return render_template('dashboard.html', courses=courses)
+    return redirect(url_for('assignments'))
 
 @app.route('/login', methods=('GET', 'POST'))
 def login():
@@ -95,36 +112,50 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
-@app.route('/upload', methods=['GET', 'POST'])
-def upload_file():
+@app.route('/assignments')
+def assignments():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    conn = get_db_connection()
+    all_assignments = conn.execute('SELECT * FROM assignments').fetchall()
+    conn.close()
+    return render_template('assignment_list.html', assignments=all_assignments)
+
+@app.route('/assignments/upload', methods=['GET', 'POST'])
+def upload_assignment():
     if 'user_id' not in session or session['role'] != 'teacher':
         return redirect(url_for('login'))
     if request.method == 'POST':
         title = request.form['title']
+        description = request.form['description']
+        due_date = request.form['due_date']
         file = request.files['file']
         if file and allowed_file(file.filename):
             filename = secure_filename(file.filename)
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            filepath = os.path.join(app.config['ASSIGNMENT_FOLDER'], filename)
             file.save(filepath)
             conn = get_db_connection()
-            conn.execute('INSERT INTO courses (title, filename, uploaded_at) VALUES (?, ?, ?)',
-                         (title, filename, datetime.now()))
+            conn.execute('INSERT INTO assignments (title, description, due_date, file_name, uploaded_by) VALUES (?, ?, ?, ?, ?)',
+                         (title, description, due_date, filename, session['user_id']))
             conn.commit()
             conn.close()
-            return redirect(url_for('index'))
-    return render_template('upload.html')
+            return redirect(url_for('assignments'))
+    return render_template('upload_assignment.html')
 
-@app.route('/watch/<filename>')
-def watch(filename):
-    if 'user_id' not in session:
+@app.route('/assignments/submit/<int:assignment_id>', methods=['GET', 'POST'])
+def submit_assignment(assignment_id):
+    if 'user_id' not in session or session['role'] != 'student':
         return redirect(url_for('login'))
-    # 簡易ログ記録
-    conn = get_db_connection()
-    conn.execute('INSERT INTO logs (user_id, filename, watched_at) VALUES (?, ?, ?)',
-                 (session['user_id'], filename, datetime.now()))
-    conn.commit()
-    conn.close()
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)), debug=True)
+    if request.method == 'POST':
+        file = request.files['file']
+        if file and allowed_file(file.filename):
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(app.config['SUBMISSION_FOLDER'], filename)
+            file.save(filepath)
+            conn = get_db_connection()
+            conn.execute('INSERT INTO submissions (assignment_id, student_id, file_name, submitted_at) VALUES (?, ?, ?, ?)',
+                         (assignment_id, session['user_id'], filename, datetime.now()))
+            conn.commit()
+            conn.close()
+            return redirect(url_for('assignments'))
+    return render_template('submit_assignment.html', assignment_id=assignment_id)
