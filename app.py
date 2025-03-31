@@ -1,3 +1,16 @@
+# Flask app entrypoint - simplified version for port binding fix
+
+from flask import Flask
+import os
+
+app = Flask(__name__)
+
+@app.route("/")
+def index():
+    return "App is running correctly with port binding!"
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)), debug=True)
 from flask import Flask, render_template, request, redirect, session, url_for, send_from_directory
 from werkzeug.utils import secure_filename
 import sqlite3
